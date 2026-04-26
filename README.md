@@ -39,3 +39,10 @@ recovered sample -> well 1 -> well 2 -> well 3 -> well 4
 ## Before using on the robot
 
 Always simulate or check the generated protocol in the Opentrons app before running it on the OT-2.
+
+
+## Presets and dilution grid
+
+The GUI includes preset buttons for current tested OT-2 settings and several NEB-style starting points. Presets only fill editable fields; users can still change every value before exporting.
+
+The visual dilution grid shows the four-well 2x2 square used for each sample in the 384-well dilution plate. It displays target dilution, source dilution, calculated transfer volume, and calculated media volume.

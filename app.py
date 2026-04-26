@@ -67,6 +67,70 @@ DEFAULT_CONFIG = {
 }
 
 
+PRESETS = {
+    "Current tested OT-2": {
+        "initial_cold_temp": 4.0,
+        "initial_cold_time_min": 30.0,
+        "heat_step_temp": 40.0,
+        "heat_step_time_sec": 30.0,
+        "post_heat_cold_temp": 4.0,
+        "post_heat_cold_time_min": 10.0,
+        "recovery_incubation_temp": 75.0,
+        "recovery_incubation_time_sec": 300.0,
+        "recovery_shake_speed": 300,
+        "recovery_media_vol": 90.0,
+        "notes": "Your tested OT-2 settings. Best for reproducing your validated run.",
+    },
+    "NEB typical": {
+        "initial_cold_temp": 4.0,
+        "initial_cold_time_min": 30.0,
+        "heat_step_temp": 42.0,
+        "heat_step_time_sec": 30.0,
+        "post_heat_cold_temp": 4.0,
+        "post_heat_cold_time_min": 5.0,
+        "recovery_incubation_temp": 37.0,
+        "recovery_incubation_time_sec": 3600.0,
+        "recovery_shake_speed": 250,
+        "recovery_media_vol": 90.0,
+        "notes": "Common NEB-style chemical transformation timing.",
+    },
+    "NEB 10 sec heat shock": {
+        "initial_cold_temp": 4.0,
+        "initial_cold_time_min": 30.0,
+        "heat_step_temp": 42.0,
+        "heat_step_time_sec": 10.0,
+        "post_heat_cold_temp": 4.0,
+        "post_heat_cold_time_min": 5.0,
+        "recovery_incubation_temp": 37.0,
+        "recovery_incubation_time_sec": 3600.0,
+        "recovery_shake_speed": 250,
+        "recovery_media_vol": 90.0,
+        "notes": "For NEB products/protocols specifying 10 sec at 42°C.",
+    },
+    "NEB 20 sec heat shock": {
+        "initial_cold_temp": 4.0,
+        "initial_cold_time_min": 30.0,
+        "heat_step_temp": 42.0,
+        "heat_step_time_sec": 20.0,
+        "post_heat_cold_temp": 4.0,
+        "post_heat_cold_time_min": 5.0,
+        "recovery_incubation_temp": 37.0,
+        "recovery_incubation_time_sec": 3600.0,
+        "recovery_shake_speed": 250,
+        "recovery_media_vol": 90.0,
+        "notes": "For NEB products/protocols specifying 20 sec at 42°C.",
+    },
+}
+
+
+def apply_preset(config: dict, preset_name: str) -> dict:
+    updated = copy.deepcopy(config)
+    for key, value in PRESETS[preset_name].items():
+        if key != "notes":
+            updated[key] = value
+    return updated
+
+
 def calculate_dilution_plan(config: dict) -> list[dict]:
     final_volume = float(config["dilution_final_volume"])
     source_factor = 1.0
@@ -198,6 +262,32 @@ st.write(
     "Adjust the run settings, check the calculated dilution plan, then download a ready-to-run Opentrons protocol file."
 )
 
+st.markdown(
+    """
+    <style>
+    .dilution-card {
+        border: 1px solid rgba(128,128,128,0.35);
+        border-radius: 14px;
+        padding: 16px;
+        text-align: center;
+        margin-bottom: 10px;
+        background: rgba(128,128,128,0.06);
+    }
+    .dilution-card h3 { margin: 0; font-size: 1.1rem; }
+    .dilution-card .big { font-size: 1.8rem; font-weight: 700; margin: 8px 0; }
+    .dilution-card .small { font-size: 0.9rem; opacity: 0.8; }
+    .warning-card {
+        border: 1px solid #e6a100;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: rgba(230,161,0,0.12);
+        margin-top: 6px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if "config" not in st.session_state:
     st.session_state.config = copy.deepcopy(DEFAULT_CONFIG)
 
@@ -223,6 +313,18 @@ tab_run, tab_dilution, tab_deck, tab_advanced, tab_export = st.tabs(
 
 with tab_run:
     left, right = st.columns(2)
+
+    st.subheader("Protocol presets")
+    preset_cols = st.columns(len(PRESETS))
+    for idx, preset_name in enumerate(PRESETS):
+        with preset_cols[idx]:
+            if st.button(preset_name, use_container_width=True):
+                config = apply_preset(config, preset_name)
+                st.session_state.config = config
+                st.rerun()
+            st.caption(PRESETS[preset_name]["notes"])
+
+    st.divider()
 
     with left:
         st.subheader("Samples and workflow")
@@ -304,9 +406,46 @@ with tab_dilution:
         t4 = st.slider("Well 4 target dilution (X)", 1, 2000, int(config["dilution_targets"][3]))
 
     config["dilution_targets"] = [t1, t2, t3, t4]
+    plan = calculate_dilution_plan(config)
+
+    st.subheader("Visual dilution grid")
+    st.write("This mirrors the 2×2 dilution square used for each sample in the 384-well plate.")
+
+    row1_a, row1_b = st.columns(2)
+    row2_a, row2_b = st.columns(2)
+    grid_cols = [row1_a, row1_b, row2_a, row2_b]
+
+    for i, step in enumerate(plan):
+        transfer = step["transfer_ul"]
+        media = step["media_ul"]
+        warning = ""
+        if transfer < float(config["minimum_dilution_transfer_vol"]):
+            warning = "Transfer below minimum"
+        elif transfer > 20:
+            warning = "Transfer above P20 max"
+
+        warning_html = f'<div class="warning-card">⚠ {warning}</div>' if warning else ''
+        with grid_cols[i]:
+            st.markdown(
+                f"""
+                <div class="dilution-card">
+                    <h3>Well {i + 1}</h3>
+                    <div class="big">{step["target_x"]:g}X</div>
+                    <div class="small">from {step["source_x"]:g}X source</div>
+                    <div class="small">Transfer: <b>{transfer:.2f} µL</b></div>
+                    <div class="small">Media: <b>{media:.2f} µL</b></div>
+                    {warning_html}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    if config["dilution_targets"] != sorted(config["dilution_targets"]):
+        st.error("Dilution sliders are out of order. Keep the four wells low-to-high because the protocol performs serial dilution.")
+    else:
+        st.success("Dilution order is valid.")
 
     st.subheader("Calculated dilution plan")
-    plan = calculate_dilution_plan(config)
     st.dataframe(
         [
             {
@@ -387,6 +526,14 @@ with tab_export:
             st.error(error)
     else:
         st.success("Configuration looks valid.")
+
+    st.subheader("Run summary")
+    st.write(
+        f"**{int(config['samples'])} samples** · "
+        f"Heat step: **{float(config['heat_step_temp']):g}°C for {float(config['heat_step_time_sec']):g} sec** · "
+        f"Recovery/outgrowth: **{float(config['recovery_incubation_temp']):g}°C for {float(config['recovery_incubation_time_sec'])/60:g} min** · "
+        f"Dilutions: **{', '.join(str(x) + 'X' for x in config['dilution_targets'])}**"
+    )
 
     st.subheader("Download")
     protocol_text = make_protocol(config)
